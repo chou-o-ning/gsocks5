@@ -23,6 +23,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/armon/go-socks5"
@@ -148,7 +149,7 @@ func (s *server) shutdown() {
 	close(s.done)
 }
 
-func (s *server) run() error {
+func (s *server) run(ppAddrPort **string) error {
 	if s.cfg.Password != "" {
 		s.password = []byte(s.cfg.Password)
 		if len(s.password) > maxPasswordLength {
@@ -176,19 +177,26 @@ func (s *server) run() error {
 		return err
 	}
 	config := &tls.Config{Certificates: []tls.Certificate{cer}}
-	ln, err := tls.Listen("tcp", s.cfg.ServerAddr, config)
+	ln, err := tls.Listen("tcp", **ppAddrPort, config)
 	if err != nil {
 		return err
 	}
 
-	log.Println("[INF] gsocks5: TLS server runs on", s.cfg.ServerAddr)
+	log.Println("[INF] gsocks5: TLS server runs on", **ppAddrPort)
+
 	s.wg.Add(1)
 	go s.serve(ln)
 
 	select {
-	// Wait for SIGINT or SIGTERM
-	case <-s.signal:
-	// Wait for a listener error
+	// Wait for SIGINT or SIGTERM or SIGUSER1
+	case sig := <-s.signal:
+		if sig == syscall.SIGINT {
+			s.errChan <- errors.New("receive a SIGINT")
+		}
+		if sig == syscall.SIGTERM {
+			s.errChan <- errors.New("receive a SIGTERM")
+		}
+		// Wait for a listener error
 	case <-s.done:
 	}
 

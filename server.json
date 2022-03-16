@@ -1,0 +1,10 @@
+{
+        "debug": true,
+        "server_cert": "cert.pem",
+        "server_key": "unencrypted.key",
+        "server_addr":"0.0.0.0:8388",
+        "password":"barfoo!",
+        "graceful_period": 1,
+        "role": "server"
+}
+

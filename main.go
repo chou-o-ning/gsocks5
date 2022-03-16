@@ -18,12 +18,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -55,10 +60,12 @@ const (
 )
 
 var (
-	path        string
-	showHelp    bool
-	showVersion bool
-	debug       bool
+	path              string
+	showHelp          bool
+	showVersion       bool
+	debug             bool
+	ppChangedAddrPort **string
+	pChangedAddrPort  *string
 )
 
 var errPasswordTooLong = errors.New("Passport too long")
@@ -73,6 +80,39 @@ func closeConn(conn net.Conn) {
 		if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != opErrAccept) {
 			log.Println("[DEBUG] gsocks5: Error while closing socket", conn.RemoteAddr(), err)
 		}
+	}
+}
+
+func http_server(cfg config) {
+	var lock sync.Mutex
+
+	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		io.WriteString(w, "hello, world!\n")
+	})
+
+	http.HandleFunc("/port", func(w http.ResponseWriter, req *http.Request) {
+
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		str_arr := strings.Split(cfg.ServerAddr, ":")
+		port, err := strconv.Atoi(str_arr[1])
+		if err != nil {
+			io.WriteString(w, cfg.ServerAddr)
+			return
+		}
+		port += r.Intn(100)
+		s := str_arr[0] + ":" + strconv.Itoa(port)
+		lock.Lock()
+		pChangedAddrPort := &s
+		lock.Unlock()
+
+		io.WriteString(w, *pChangedAddrPort)
+		selfpid := syscall.Getpid()
+		log.Printf("main: send pid: %v SIGUSER1, to restart service and change port", selfpid)
+		syscall.Kill(selfpid, syscall.SIGUSR1)
+	})
+
+	if e := http.ListenAndServeTLS(":9000", "cert.pem", "unencrypted.key", nil); e != nil {
+		log.Fatal("ListenAndServe: ", e)
 	}
 }
 
@@ -119,20 +159,29 @@ func main() {
 
 	// Handle SIGINT and SIGTERM.
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	switch {
-	case cfg.Role == roleClient:
-		log.Print("[INF] gsocks5: Running as client")
-		cl := newClient(cfg, sigChan)
-		if err = cl.run(); err != nil {
-			log.Fatalf("[ERR] gsocks5: failed to serve %s", err)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
+
+	pChangedAddrPort := &cfg.ServerAddr
+	ppChangedAddrPort := &pChangedAddrPort
+
+	go http_server(cfg)
+
+	for true {
+
+		switch {
+		case cfg.Role == roleClient:
+			log.Print("[INF] gsocks5: Running as client")
+			cl := newClient(cfg, sigChan)
+			if err = cl.run(); err != nil {
+				log.Fatalf("[ERR] gsocks5: failed to serve %s", err)
+			}
+		case cfg.Role == roleServer:
+			log.Print("[INF] gsocks5: Running as server")
+			srv := newServer(cfg, sigChan)
+			if err = srv.run(ppChangedAddrPort); err != nil {
+				log.Fatalf("[ERR] gsocks5: failed to serve %s", err)
+			}
 		}
-	case cfg.Role == roleServer:
-		log.Print("[INF] gsocks5: Running as server")
-		srv := newServer(cfg, sigChan)
-		if err = srv.run(); err != nil {
-			log.Fatalf("[ERR] gsocks5: failed to serve %s", err)
-		}
+		log.Print("[INF] Goodbye!")
 	}
-	log.Print("[INF] Goodbye!")
 }
