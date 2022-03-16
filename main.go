@@ -60,12 +60,11 @@ const (
 )
 
 var (
-	path              string
-	showHelp          bool
-	showVersion       bool
-	debug             bool
-	ppChangedAddrPort **string
-	pChangedAddrPort  *string
+	path             string
+	showHelp         bool
+	showVersion      bool
+	debug            bool
+	pChangedAddrPort *string
 )
 
 var errPasswordTooLong = errors.New("Passport too long")
@@ -102,7 +101,7 @@ func http_server(cfg config) {
 		port += r.Intn(100)
 		s := str_arr[0] + ":" + strconv.Itoa(port)
 		lock.Lock()
-		pChangedAddrPort := &s
+		pChangedAddrPort = &s
 		lock.Unlock()
 
 		io.WriteString(w, *pChangedAddrPort)
@@ -161,13 +160,11 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
 
-	pChangedAddrPort := &cfg.ServerAddr
-	ppChangedAddrPort := &pChangedAddrPort
+	pChangedAddrPort = &cfg.ServerAddr
 
 	go http_server(cfg)
 
 	for true {
-
 		switch {
 		case cfg.Role == roleClient:
 			log.Print("[INF] gsocks5: Running as client")
@@ -178,7 +175,7 @@ func main() {
 		case cfg.Role == roleServer:
 			log.Print("[INF] gsocks5: Running as server")
 			srv := newServer(cfg, sigChan)
-			if err = srv.run(ppChangedAddrPort); err != nil {
+			if err = srv.run(&pChangedAddrPort); err != nil {
 				log.Fatalf("[ERR] gsocks5: failed to serve %s", err)
 			}
 		}
