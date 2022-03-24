@@ -1,0 +1,14 @@
+{
+        "debug": true,
+        "insecure_skip_verify": true,
+        "server_addr":"192.168.122.246:8388",
+        "client_addr": "192.168.122.78:1080",
+	"http_port": "9100",
+	"access_cycle": "2",
+	"password":"barfoo!",
+        "dial_timeout": 10,
+        "keepalive_period": 3600,
+        "graceful_period": 1,
+        "role": "client"
+}
+
