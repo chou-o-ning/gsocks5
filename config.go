@@ -34,6 +34,8 @@ type config struct {
 	Debug              bool   `json:"debug"`
 	InsecureSkipVerify bool   `json:"insecure_skip_verify"`
 	Role               string `json:"role"`
+	HttpPort           string `json:"http_port"`
+	AccessCycle        string `json:"access_cycle"`
 	ServerAddr         string `json:"server_addr"`
 	ServerCert         string `json:"server_cert"`
 	ServerKey          string `json:"server_key"`
@@ -70,6 +72,15 @@ func newConfig(file string) (config, error) {
 
 	if cfg.DialTimeout == 0 {
 		cfg.DialTimeout = defaultDialTimeout
+	}
+
+	if cfg.HttpPort == "" {
+		cfg.HttpPort = "9000"
+	}
+
+	// default value: chang port per hour
+	if cfg.AccessCycle == "" {
+		cfg.AccessCycle = "1"
 	}
 
 	if cfg.Role == roleServer {

@@ -15,6 +15,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -35,6 +36,7 @@ import (
 	"log"
 
 	"github.com/hashicorp/logutils"
+	"github.com/robfig/cron/v3"
 )
 
 const opErrAccept = "accept"
@@ -65,6 +67,8 @@ var (
 	showVersion      bool
 	debug            bool
 	pChangedAddrPort *string
+	cn               *cron.Cron = nil
+	pCfg             *config
 )
 
 var errPasswordTooLong = errors.New("Passport too long")
@@ -85,9 +89,11 @@ func closeConn(conn net.Conn) {
 func http_server(cfg config) {
 	var lock sync.Mutex
 
-	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-		io.WriteString(w, "hello, world!\n")
-	})
+	server := &http.Server{
+		Addr:         ":" + cfg.HttpPort,
+		ReadTimeout:  5 * time.Minute, // 5 min to allow for delays when 'curl' on OSx prompts for username/password
+		WriteTimeout: 10 * time.Second,
+	}
 
 	http.HandleFunc("/port", func(w http.ResponseWriter, req *http.Request) {
 
@@ -110,9 +116,47 @@ func http_server(cfg config) {
 		syscall.Kill(selfpid, syscall.SIGUSR1)
 	})
 
-	if e := http.ListenAndServeTLS(":9000", "cert.pem", "unencrypted.key", nil); e != nil {
+	if e := server.ListenAndServeTLS(cfg.ServerCert, cfg.ServerKey); e != nil {
 		log.Fatal("ListenAndServe: ", e)
 	}
+}
+
+func getAddrPort() {
+	http.DefaultClient.Timeout = time.Minute * 1
+	c := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}}
+
+	if resp, e := c.Get("https://gserver:" + pCfg.HttpPort + "/port"); e != nil {
+		log.Fatal("http.Client.Get: ", e)
+	} else {
+		defer resp.Body.Close()
+		resp.Close = true
+		b, err := io.ReadAll(resp.Body)
+		if err == nil {
+			s := string(b)
+			pChangedAddrPort = &s
+			selfpid := syscall.Getpid()
+			log.Printf("main: send pid: %v SIGUSER1, to restart service and change port", selfpid)
+			syscall.Kill(selfpid, syscall.SIGUSR1)
+		}
+	}
+}
+
+func http_client() {
+	if cn != nil {
+		cn.Stop()
+		cn = nil
+	}
+
+	cn = cron.New(cron.WithSeconds()) //accurate to the second
+
+	// timer
+	spec := "0 * */" + pCfg.AccessCycle + " * * ?" //Cron Expressions
+	log.Print("cron expression: " + spec)
+	cn.AddFunc(spec, getAddrPort)
+	cn.Start()
 }
 
 func main() {
@@ -141,6 +185,7 @@ func main() {
 		return
 	}
 	cfg, err := newConfig(path)
+	pCfg = &cfg
 	if err != nil {
 		log.Fatalf("[ERR] Failed to load configuration: %s", err)
 	}
@@ -162,18 +207,18 @@ func main() {
 
 	pChangedAddrPort = &cfg.ServerAddr
 
-	go http_server(cfg)
-
 	for true {
 		switch {
 		case cfg.Role == roleClient:
 			log.Print("[INF] gsocks5: Running as client")
+			go http_client()
 			cl := newClient(cfg, sigChan)
-			if err = cl.run(); err != nil {
+			if err = cl.run(&pChangedAddrPort); err != nil {
 				log.Fatalf("[ERR] gsocks5: failed to serve %s", err)
 			}
 		case cfg.Role == roleServer:
 			log.Print("[INF] gsocks5: Running as server")
+			go http_server(cfg)
 			srv := newServer(cfg, sigChan)
 			if err = srv.run(&pChangedAddrPort); err != nil {
 				log.Fatalf("[ERR] gsocks5: failed to serve %s", err)

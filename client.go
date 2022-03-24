@@ -17,11 +17,13 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"errors"
 	"io"
 	"log"
 	"net"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -102,7 +104,7 @@ func (c *client) authenticate(conn io.ReadWriter, errChan chan error) {
 	errChan <- nil
 }
 
-func (c *client) clientConn(conn net.Conn) {
+func (c *client) clientConn(conn net.Conn, ppAddrPort **string) {
 	defer c.wg.Done()
 	defer closeConn(conn)
 
@@ -112,10 +114,12 @@ func (c *client) clientConn(conn net.Conn) {
 	cfg := &tls.Config{
 		InsecureSkipVerify: c.cfg.InsecureSkipVerify,
 	}
-	rConn, err := tls.DialWithDialer(d, "tcp", c.cfg.ServerAddr, cfg)
+	rConn, err := tls.DialWithDialer(d, "tcp", **ppAddrPort, cfg)
 	if err != nil {
-		log.Println("[ERR] gsocks5: Failed to dial", c.cfg.ServerAddr, err)
+		log.Println("[ERR] gsocks5: Failed to dial", **ppAddrPort, err)
 		return
+	} else {
+		log.Println("[INF] gsocks5: dial to ", **ppAddrPort)
 	}
 	defer closeConn(rConn)
 
@@ -144,7 +148,7 @@ func (c *client) clientConn(conn net.Conn) {
 	}
 }
 
-func (c *client) serve(l net.Listener) {
+func (c *client) serve(l net.Listener, ppAddrPort **string) {
 	defer c.wg.Done()
 	for {
 		conn, err := l.Accept()
@@ -172,7 +176,7 @@ func (c *client) serve(l net.Listener) {
 		}
 
 		c.wg.Add(1)
-		go c.clientConn(conn)
+		go c.clientConn(conn, ppAddrPort)
 	}
 }
 
@@ -185,7 +189,7 @@ func (c *client) shutdown() {
 	close(c.done)
 }
 
-func (c *client) run() error {
+func (c *client) run(ppAddrPort **string) error {
 	if c.cfg.Password != "" {
 		c.password = []byte(c.cfg.Password)
 		if len(c.password) > maxPasswordLength {
@@ -200,12 +204,18 @@ func (c *client) run() error {
 
 	log.Println("[INF] gsocks5: Proxy client runs on", c.cfg.ClientAddr)
 	c.wg.Add(1)
-	go c.serve(ln)
+	go c.serve(ln, ppAddrPort)
 
 	select {
-	// Wait for SIGINT or SIGTERM
-	case <-c.signal:
-	// Wait for a listener error
+	// Wait for SIGINT or SIGTERM or SIGUSER1
+	case sig := <-c.signal:
+		if sig == syscall.SIGINT {
+			c.errChan <- errors.New("receive a SIGINT")
+		}
+		if sig == syscall.SIGTERM {
+			c.errChan <- errors.New("receive a SIGTERM")
+		}
+		// Wait for a listener error
 	case <-c.done:
 	}
 
