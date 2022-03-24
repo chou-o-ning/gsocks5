@@ -207,6 +207,10 @@ func main() {
 
 	pChangedAddrPort = &cfg.ServerAddr
 
+	if cfg.Role == roleServer {
+		go http_server(cfg)
+	}
+
 	for true {
 		switch {
 		case cfg.Role == roleClient:
@@ -218,7 +222,6 @@ func main() {
 			}
 		case cfg.Role == roleServer:
 			log.Print("[INF] gsocks5: Running as server")
-			go http_server(cfg)
 			srv := newServer(cfg, sigChan)
 			if err = srv.run(&pChangedAddrPort); err != nil {
 				log.Fatalf("[ERR] gsocks5: failed to serve %s", err)
