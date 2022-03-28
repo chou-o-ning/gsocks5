@@ -4,7 +4,7 @@
         "server_key": "unencrypted.key",
 	"http_port": "9100",
 	"access_cycle": "2",
-	"server_addr":"192.168.122.246:8388",
+	"server_addr":"192.168.122.78",
         "password":"barfoo!",
         "graceful_period": 1,
         "role": "server"

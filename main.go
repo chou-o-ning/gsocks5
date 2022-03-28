@@ -98,10 +98,10 @@ func http_server(cfg config) {
 	http.HandleFunc("/port", func(w http.ResponseWriter, req *http.Request) {
 
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
-		str_arr := strings.Split(cfg.ServerAddr, ":")
+		str_arr := strings.Split(*pChangedAddrPort, ":")
 		port, err := strconv.Atoi(str_arr[1])
 		if err != nil {
-			io.WriteString(w, cfg.ServerAddr)
+			io.WriteString(w, *pChangedAddrPort)
 			return
 		}
 		port += r.Intn(100)
@@ -122,13 +122,31 @@ func http_server(cfg config) {
 }
 
 func getAddrPort() {
-	http.DefaultClient.Timeout = time.Minute * 1
 	c := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}}
 
-	if resp, e := c.Get("https://gserver:" + pCfg.HttpPort + "/port"); e != nil {
+	if resp, e := c.Get("https://" + pCfg.ServerAddr + ":" + pCfg.HttpPort + "/port"); e != nil {
+		log.Fatal("http.Client.Get: ", e)
+	} else {
+		defer resp.Body.Close()
+		resp.Close = true
+		b, err := io.ReadAll(resp.Body)
+		if err == nil {
+			s := string(b)
+			pChangedAddrPort = &s
+		}
+	}
+}
+
+func getAddrPortAndKill() {
+	c := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}}
+
+	if resp, e := c.Get("https://" + pCfg.ServerAddr + ":" + pCfg.HttpPort + "/port"); e != nil {
 		log.Fatal("http.Client.Get: ", e)
 	} else {
 		defer resp.Body.Close()
@@ -153,9 +171,9 @@ func http_client() {
 	cn = cron.New(cron.WithSeconds()) //accurate to the second
 
 	// timer
-	spec := "0 * */" + pCfg.AccessCycle + " * * ?" //Cron Expressions
+	spec := "0 0 */" + pCfg.AccessCycle + " * * ?" //Cron Expressions
 	log.Print("cron expression: " + spec)
-	cn.AddFunc(spec, getAddrPort)
+	cn.AddFunc(spec, getAddrPortAndKill)
 	cn.Start()
 }
 
@@ -205,13 +223,24 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
 
-	pChangedAddrPort = &cfg.ServerAddr
-
 	if cfg.Role == roleClient {
+		getAddrPort()
 		go http_client()
 	}
 
 	if cfg.Role == roleServer {
+		// 服务器初始化端口在 http 端口相距1000 + 随机值，避免端口冲突
+		initPort, err := strconv.Atoi(cfg.HttpPort)
+		if err != nil {
+			log.Fatalf("[ERR] gsocks5: convert from string to int error: %s", err)
+			return
+		}
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		initPort += r.Intn(100)
+		initPort += 1000
+		addressPort := cfg.ServerAddr + ":" + strconv.Itoa(initPort)
+		pChangedAddrPort = &addressPort
+
 		go http_server(cfg)
 	}
 

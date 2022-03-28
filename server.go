@@ -203,7 +203,7 @@ func (s *server) run(ppAddrPort **string) error {
 	// Signal all running goroutines to stop.
 	s.shutdown()
 
-	log.Println("[INF] gsocks5: Stopping proxy", s.cfg.ServerAddr)
+	log.Println("[INF] gsocks5: Stopping proxy", **ppAddrPort)
 	if err = ln.Close(); err != nil {
 		log.Println("[ERR] gsocks5: Failed to close listener", err)
 	}
