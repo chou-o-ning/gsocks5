@@ -224,7 +224,6 @@ func main() {
 		panic(err)
 	}
 	log.SetOutput(logFile)
-	log.Print("[ERROR] hello log file")
 
 	// Handle SIGINT and SIGTERM.
 	sigChan := make(chan os.Signal, 1)
