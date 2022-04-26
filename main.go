@@ -219,6 +219,13 @@ func main() {
 	}
 	log.SetOutput(filter)
 
+	logFile, err := os.OpenFile("logfile.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0766)
+	if err != nil {
+		panic(err)
+	}
+	log.SetOutput(logFile)
+	log.Print("[ERROR] hello log file")
+
 	// Handle SIGINT and SIGTERM.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
