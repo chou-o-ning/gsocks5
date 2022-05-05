@@ -117,7 +117,7 @@ func http_server(cfg config) {
 	})
 
 	if e := server.ListenAndServeTLS(cfg.ServerCert, cfg.ServerKey); e != nil {
-		log.Fatal("ListenAndServe: ", e)
+		log.Println("ListenAndServe: ", e)
 	}
 }
 
@@ -128,7 +128,7 @@ func getAddrPort() {
 		}}
 
 	if resp, e := c.Get("https://" + pCfg.ServerAddr + ":" + pCfg.HttpPort + "/port"); e != nil {
-		log.Fatal("http.Client.Get: ", e)
+		log.Println("http.Client.Get: ", e)
 	} else {
 		defer resp.Body.Close()
 		resp.Close = true
@@ -147,7 +147,7 @@ func getAddrPortAndKill() {
 		}}
 
 	if resp, e := c.Get("https://" + pCfg.ServerAddr + ":" + pCfg.HttpPort + "/port"); e != nil {
-		log.Fatal("http.Client.Get: ", e)
+		log.Println("http.Client.Get: ", e)
 	} else {
 		defer resp.Body.Close()
 		resp.Close = true
